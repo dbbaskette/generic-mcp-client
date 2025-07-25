@@ -1,0 +1,26 @@
+spring:
+  ai:
+    mcp:
+      client:
+        enabled: true
+        name: generic-mcp-client
+        version: 1.0.0
+        request-timeout: 30s
+        type: SYNC
+        stdio:
+          connections:
+            generic:
+              command: java
+              args:
+              - -Dlogging.level.root=OFF
+              - -Dspring.main.banner-mode=off
+              - -Dspring.main.log-startup-info=false
+              - -jar
+              - /path/to/your/mcp-server.jar  # Replace with your actual server JAR path
+logging:
+  level:
+    org.springframework.ai.mcp: INFO
+    com.baskettecase.mcpclient: INFO
+    com.baskettecase.mcpclient.client.SpringAiMcpClientManager: WARN
+  pattern:
+    console: '%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n'
