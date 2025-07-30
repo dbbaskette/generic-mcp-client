@@ -1,0 +1,27 @@
+# Generic MCP Server Profile
+spring:
+  ai:
+    mcp:
+      client:
+        enabled: true
+        stdio:
+          connections:
+            generic-mcp-server:
+              command: java
+              args:
+              - -Dlogging.level.root=OFF
+              - -Dspring.main.banner-mode=off
+              - -Dspring.main.log-startup-info=false
+              - -jar
+              - /Users/dbbaskette/Projects/generic-mcp-server/target/generic-mcp-server-2.0.1.jar
+              - --spring.profiles.active=stdio
+
+logging:
+  level:
+    org.springframework.ai.mcp: DEBUG
+    com.baskettecase.mcpclient: DEBUG
+    com.baskettecase.mcpclient.client.SpringAiMcpClientManager: DEBUG
+    org.springframework.ai.mcp.client: DEBUG
+    org.springframework.ai.mcp.client.autoconfigure: DEBUG
+  pattern:
+    console: '%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n'

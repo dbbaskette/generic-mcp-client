@@ -1,0 +1,11 @@
+# No-Server Profile: Clean start with no auto-connections
+spring:
+  ai:
+    mcp:
+      client:
+        enabled: false
+
+logging:
+  level:
+    org.springframework.ai.mcp: INFO
+    com.baskettecase.mcpclient: INFO

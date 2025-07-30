@@ -1,54 +1,23 @@
-# Application Properties (contains API keys)
-application.properties
-src/main/resources/application.yml
-
 # Compiled class files
-*.class
+target/
 
 # Log files
-*.log
 logs/
+*.log
 
-# Package Files
-*.jar
-*.war
-*.nar
-*.ear
-*.zip
-*.tar.gz
-*.rar
-
-# Maven
-target/
-pom.xml.tag
-pom.xml.releaseBackup
-pom.xml.versionsBackup
-pom.xml.next
-release.properties
-dependency-reduced-pom.xml
-buildNumber.properties
-.mvn/timing.properties
-.mvn/wrapper/maven-wrapper.jar
-
-# IDE Files
+# IDE files
 .idea/
-*.iws
 *.iml
 *.ipr
+*.iws
 .vscode/
-.classpath
-.project
-.settings/
 
-# OS Files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
+# Application Configuration
+# Contains sensitive information like API keys and local paths.
+/src/main/resources/application.yml
 
-# Client State Files
-.mcp-client-state.json
-saved-servers.json
+# Release scripts and config
+# These are often environment-specific or contain credentials.
+release.sh
+.release-exec
+.release.conf

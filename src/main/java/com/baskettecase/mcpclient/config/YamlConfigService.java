@@ -72,8 +72,45 @@ public class YamlConfigService {
     private Map<String, Object> loadYamlConfig(Path yamlPath) throws IOException {
         Yaml yaml = new Yaml();
         try (FileReader reader = new FileReader(yamlPath.toFile())) {
-            Map<String, Object> config = yaml.load(reader);
-            return config != null ? config : new LinkedHashMap<>();
+            // Load all documents and find the one with MCP client config
+            Iterable<Object> documents = yaml.loadAll(reader);
+            
+            for (Object doc : documents) {
+                if (doc instanceof Map) {
+                    Map<String, Object> docMap = (Map<String, Object>) doc;
+                    // Look for a document that has spring.ai.mcp.client.stdio.connections
+                    if (hasConnectionsSection(docMap)) {
+                        return docMap;
+                    }
+                }
+            }
+            
+            // If no document with connections found, return empty map
+            return new LinkedHashMap<>();
+        }
+    }
+    
+    @SuppressWarnings("unchecked")
+    private boolean hasConnectionsSection(Map<String, Object> config) {
+        try {
+            Map<String, Object> spring = (Map<String, Object>) config.get("spring");
+            if (spring == null) return false;
+            
+            Map<String, Object> ai = (Map<String, Object>) spring.get("ai");
+            if (ai == null) return false;
+            
+            Map<String, Object> mcp = (Map<String, Object>) ai.get("mcp");
+            if (mcp == null) return false;
+            
+            Map<String, Object> client = (Map<String, Object>) mcp.get("client");
+            if (client == null) return false;
+            
+            Map<String, Object> stdio = (Map<String, Object>) client.get("stdio");
+            if (stdio == null) return false;
+            
+            return stdio.containsKey("connections");
+        } catch (ClassCastException e) {
+            return false;
         }
     }
 

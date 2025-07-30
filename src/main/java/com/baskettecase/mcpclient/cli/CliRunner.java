@@ -6,13 +6,21 @@ import com.baskettecase.mcpclient.util.ParameterParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.core.env.ConfigurableEnvironment;
+import org.springframework.core.env.EnumerablePropertySource;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.MutablePropertySources;
+import org.springframework.core.env.PropertySource;
 import org.springframework.stereotype.Component;
 
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
+import java.util.Set;
 
 /**
  * Main CLI interface for the MCP Client
@@ -35,12 +43,15 @@ public class CliRunner implements CommandLineRunner {
     private final SpringAiMcpClientManager clientManager;
     private final ParameterParser parameterParser;
     private final YamlConfigService yamlConfigService;
+    private final Environment environment;
 
-    public CliRunner(SpringAiMcpClientManager clientManager, ParameterParser parameterParser, YamlConfigService yamlConfigService) {
+    public CliRunner(SpringAiMcpClientManager clientManager, ParameterParser parameterParser, 
+                    YamlConfigService yamlConfigService, Environment environment) {
         this.prompt = "mcp-client> ";
         this.clientManager = clientManager;
         this.parameterParser = parameterParser;
         this.yamlConfigService = yamlConfigService;
+        this.environment = environment;
         
         // Add shutdown hook for clean disconnect
         Runtime.getRuntime().addShutdownHook(new Thread(clientManager::shutdown));
@@ -50,8 +61,65 @@ public class CliRunner implements CommandLineRunner {
     public void run(String... args) throws Exception {
         printWelcome();
         
-        // Check for auto-connect to default server
-        if (clientManager.hasDefaultServer()) {
+        // Show profile and connection status
+        String[] activeProfiles = environment.getActiveProfiles();
+        if (activeProfiles.length > 0) {
+            System.out.println("Active profile: " + String.join(", ", activeProfiles));
+            
+            // If a server profile is active, auto-connect to configured servers  
+            if (!activeProfiles[0].equals("no-server") && clientManager.isMcpEnabled()) {
+                System.out.println("Auto-connecting to configured servers...");
+                
+                // Get configured servers from the active profile
+                var configuredServers = getConfiguredServers();
+                
+                if (configuredServers.isEmpty()) {
+                    System.out.println("No servers configured in this profile");
+                } else {
+                    boolean anyConnected = false;
+                    
+                    for (var serverConfig : configuredServers.entrySet()) {
+                        String serverName = serverConfig.getKey();
+                        String jarPath = serverConfig.getValue();
+                        
+                        System.out.println("Connecting to: " + serverName);
+                        
+                        boolean connected = clientManager.connect(serverName, jarPath, false);
+                        if (connected) {
+                            // Wait a moment for connection to establish
+                            Thread.sleep(3000);
+                            
+                            try {
+                                List<String> tools = clientManager.listToolNames();
+                                if (tools.size() > 0) {
+                                    System.out.println("✓ " + serverName + " connected - " + tools.size() + " tools available");
+                                    anyConnected = true;
+                                } else {
+                                    System.out.println("⚠ " + serverName + " connected but no tools yet");
+                                }
+                            } catch (Exception e) {
+                                System.out.println("⚠ " + serverName + " connection established but tools not ready");
+                            }
+                        } else {
+                            System.out.println("✗ Failed to connect to " + serverName);
+                        }
+                    }
+                    
+                    if (anyConnected) {
+                        System.out.println("\nReady! Try: list-tools");
+                    } else {
+                        System.out.println("\nAuto-connection completed but servers may still be starting...");
+                    }
+                }
+            }
+        } else {
+            System.out.println("Using default profile");
+        }
+        System.out.println();
+        
+        // Skip auto-connection entirely - let Spring profiles handle connections
+        boolean isNoServerMode = isNoServerMode();
+        if (false) { // Disable auto-connection logic completely
             var defaultConfig = clientManager.getDefaultServerConfig();
             if (defaultConfig.isPresent()) {
                 var config = defaultConfig.get();
@@ -92,6 +160,75 @@ public class CliRunner implements CommandLineRunner {
         startInteractiveMode();
     }
 
+    /**
+     * Check if running in no-server mode
+     */
+    private boolean isNoServerMode() {
+        String[] activeProfiles = environment.getActiveProfiles();
+        for (String profile : activeProfiles) {
+            if ("no-server".equals(profile)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Get configured servers from Spring configuration
+     */
+    private Map<String, String> getConfiguredServers() {
+        Map<String, String> servers = new HashMap<>();
+        
+        try {
+            // Get all properties that match the MCP client connections pattern
+            String connectionsPrefix = "spring.ai.mcp.client.stdio.connections";
+            
+            // Iterate through environment properties to find server configurations
+            for (String propertyName : getPropertyNames()) {
+                if (propertyName.startsWith(connectionsPrefix)) {
+                    // Extract server name from property path
+                    // spring.ai.mcp.client.stdio.connections.test4.args[4] -> test4
+                    String[] parts = propertyName.split("\\.");
+                    if (parts.length >= 7) {
+                        String serverName = parts[6]; // The server name part
+                        
+                        // Look for the JAR path in the args
+                        if (propertyName.contains(".args[") && environment.getProperty(propertyName, "").contains(".jar")) {
+                            String jarPath = environment.getProperty(propertyName);
+                            if (jarPath != null && jarPath.endsWith(".jar")) {
+                                servers.put(serverName, jarPath);
+                            }
+                        }
+                    }
+                }
+            }
+            
+        } catch (Exception e) {
+            logger.debug("Error reading server configuration: {}", e.getMessage());
+        }
+        
+        return servers;
+    }
+    
+    /**
+     * Get all property names from environment
+     */
+    private Set<String> getPropertyNames() {
+        Set<String> propertyNames = new HashSet<>();
+        
+        // Get property names from environment
+        MutablePropertySources propertySources = ((ConfigurableEnvironment) environment).getPropertySources();
+        
+        for (PropertySource<?> propertySource : propertySources) {
+            if (propertySource instanceof EnumerablePropertySource) {
+                String[] names = ((EnumerablePropertySource<?>) propertySource).getPropertyNames();
+                propertyNames.addAll(Arrays.asList(names));
+            }
+        }
+        
+        return propertyNames;
+    }
+
     private void printWelcome() {
         System.out.println();
         System.out.println("=== Generic MCP Client ===");
@@ -99,7 +236,7 @@ public class CliRunner implements CommandLineRunner {
         System.out.println();
         System.out.println("Available commands:");
         System.out.println("  connect <name> stdio <jar-path>     - Connect to MCP server");
-        System.out.println("  connect <name> stdio <jar-path> --save-default - Connect and save as default");
+        System.out.println("  connect <name> stdio <jar-path> default - Connect and save as default");
         System.out.println("  list-tools                          - List available tools");
         System.out.println("  status                              - Show connection status");
         System.out.println("  describe-tool <tool-name>           - Show tool details");
@@ -155,52 +292,55 @@ public class CliRunner implements CommandLineRunner {
 
     private void handleConnect(String args) {
         if (args.trim().isEmpty()) {
-            System.out.println("Usage: connect <name> stdio <jar-path> [--save-default]");
+            System.out.println("Usage: connect <name> stdio <jar-path> [default]");
             return;
         }
 
         String[] parts = args.split("\\s+");
         if (parts.length < 3 || !parts[1].equals("stdio")) {
-            System.out.println("Usage: connect <name> stdio <jar-path> [--save-default]");
+            System.out.println("Usage: connect <name> stdio <jar-path> [default]");
             System.out.println("Example: connect myserver stdio /path/to/server.jar");
+            System.out.println("Example: connect myserver stdio /path/to/server.jar default");
             return;
         }
 
         String serverName = parts[0];
         String jarPath = parts[2];
-        boolean saveDefault = parts.length > 3 && "--save-default".equals(parts[3]);
+        boolean saveDefault = parts.length > 3 && "default".equals(parts[3]);
 
-        System.out.println("Connecting to MCP server...");
-        System.out.println("  Name: " + serverName);
-        System.out.println("  JAR: " + jarPath);
+        System.out.println("Connecting to MCP server: " + serverName);
         
         if (saveDefault) {
-            System.out.println("  Will save as default server");
+            System.out.println("Will save as default connection profile");
         }
 
         boolean success = clientManager.connect(serverName, jarPath, saveDefault);
         
         if (success) {
-            System.out.println("✓ Successfully connected to server: " + serverName);
-            
-            if (saveDefault) {
-                System.out.println("✓ Saved as default server");
-                System.out.println("  Config file: " + clientManager.getDefaultServerConfigPath());
+            if (clientManager.isConnected() && clientManager.listToolNames().size() > 0) {
+                // Already configured and working
+                System.out.println("✓ Connected to server: " + serverName);
+                try {
+                    List<String> tools = clientManager.listToolNames();
+                    System.out.println("✓ Discovered " + tools.size() + " tools");
+                } catch (Exception e) {
+                    System.out.println("⚠ Connected but no tools available");
+                }
+            } else {
+                // Need configuration
+                System.out.println("✓ Server registered: " + serverName);
+                if (saveDefault) {
+                    System.out.println("✓ Saved as default connection");
+                }
+                System.out.println();
+                System.out.println("Next steps:");
+                System.out.println("  1. Run: generate-config");
+                System.out.println("  2. Choose option 1 to auto-configure and restart");
+                System.out.println("  3. Server will be available after restart");
             }
             
-            // Show available tools with clean output
-            try {
-                List<String> tools = clientManager.listToolNames();
-                System.out.println("✓ Discovered " + tools.size() + " tools:");
-                tools.forEach(toolName -> {
-                    // Get basic description without full schema
-                    String description = clientManager.getToolDescription(toolName);
-                    String shortDescription = extractShortDescription(description);
-                    System.out.println("  - " + toolName + ": " + shortDescription);
-                });
-                System.out.println("Use 'describe-tool <name>' for detailed parameter information.");
-            } catch (Exception e) {
-                System.out.println("⚠ Connected but failed to list tools: " + e.getMessage());
+            if (saveDefault) {
+                System.out.println("Config saved to: " + clientManager.getDefaultServerConfigPath());
             }
         } else {
             System.out.println("✗ Failed to connect to server: " + serverName);
@@ -592,9 +732,9 @@ public class CliRunner implements CommandLineRunner {
                 System.out.println("  JAR: " + config.jarPath());
                 System.out.println();
                 
-                // Offer automatic configuration and restart
+                // Generate configuration and provide restart instructions
                 System.out.println("Choose an option:");
-                System.out.println("  1. Auto-configure and restart (recommended)");
+                System.out.println("  1. Add to application.yml (recommended)");
                 System.out.println("  2. Show YAML configuration only");
                 System.out.print("Enter choice (1 or 2): ");
                 
@@ -602,7 +742,7 @@ public class CliRunner implements CommandLineRunner {
                 System.out.println();
                 
                 if ("1".equals(choice)) {
-                    handleAutoConfigureAndRestart(config.serverName(), config.jarPath());
+                    handleAddToConfig(config.serverName(), config.jarPath());
                 } else {
                     generateConfigForServer(config.serverName(), config.jarPath());
                 }
@@ -640,14 +780,14 @@ public class CliRunner implements CommandLineRunner {
         System.out.println("to establish the STDIO connection and discover tools.");
     }
 
-    private void handleAutoConfigureAndRestart(String serverName, String jarPath) {
-        System.out.println("=== Auto-Configure and Restart ===");
+    private void handleAddToConfig(String serverName, String jarPath) {
+        System.out.println("=== Add Server to Configuration ===");
         System.out.println();
         
         // Check if server already exists in configuration
         if (yamlConfigService.serverExistsInConfig(serverName)) {
-            System.out.println("⚠ Server '" + serverName + "' already exists in application.yml");
-            System.out.println("Proceeding with restart to ensure connection is active...");
+            System.out.println("✓ Server '" + serverName + "' already exists in application.yml");
+            System.out.println();
         } else {
             System.out.println("Adding server configuration to application.yml...");
             boolean success = yamlConfigService.addServerToApplicationYml(serverName, jarPath);
@@ -661,31 +801,13 @@ public class CliRunner implements CommandLineRunner {
             }
         }
         
+        System.out.println("Next steps:");
+        System.out.println("  1. Exit this application (type 'exit')");
+        System.out.println("  2. Run: ./mcp-client.sh");
+        System.out.println("  3. Server will be available automatically");
         System.out.println();
-        System.out.println("🔄 Restarting application to establish STDIO connection...");
-        System.out.println("The application will restart automatically and connect to the server.");
-        System.out.println();
-        
-        // Trigger application restart
-        triggerRestart();
     }
 
-    private void triggerRestart() {
-        try {
-            // Clean shutdown
-            running = false;
-            
-            // Exit with special code that can be caught by a wrapper script
-            // or use Spring Boot's restart mechanism
-            System.out.println("Exiting for restart...");
-            System.exit(42); // Special exit code for restart
-            
-        } catch (Exception e) {
-            logger.error("Failed to trigger restart", e);
-            System.out.println("✗ Failed to trigger automatic restart");
-            System.out.println("Please manually restart the application to see the new server.");
-        }
-    }
 
     private void handleExit() {
         System.out.println("Shutting down MCP client...");

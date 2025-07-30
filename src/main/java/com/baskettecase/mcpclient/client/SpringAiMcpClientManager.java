@@ -8,6 +8,7 @@ import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -25,6 +26,7 @@ public class SpringAiMcpClientManager {
 
     private final DefaultServerConfigService defaultServerConfigService;
     private final YamlConfigService yamlConfigService;
+    private final Environment environment;
     
     // Spring AI MCP Client components - injected when available
     private SyncMcpToolCallbackProvider toolCallbackProvider;
@@ -33,9 +35,11 @@ public class SpringAiMcpClientManager {
 
     @Autowired
     public SpringAiMcpClientManager(DefaultServerConfigService defaultServerConfigService, 
-                                   YamlConfigService yamlConfigService) {
+                                   YamlConfigService yamlConfigService,
+                                   Environment environment) {
         this.defaultServerConfigService = defaultServerConfigService;
         this.yamlConfigService = yamlConfigService;
+        this.environment = environment;
     }
 
 
@@ -78,16 +82,11 @@ public class SpringAiMcpClientManager {
             boolean hasActiveConnection = checkForServerConnection(serverName);
             
             if (hasActiveConnection) {
-                logger.info("✓ Spring AI MCP Client already has active connection to: {}", serverName);
+                logger.debug("✓ Spring AI MCP Client already has active connection to: {}", serverName);
                 currentServerName = serverName;
                 return true;
             } else {
-                logger.warn("⚠ Server '{}' not found in Spring AI MCP Client connections", serverName);
-                logger.warn("To establish connection, add this to your application.yml:");
-                logger.warn("");
-                printServerConfiguration(serverName, jarPath);
-                logger.warn("");
-                logger.warn("Then restart the application or use 'generate-config' command for auto-configuration.");
+                logger.debug("⚠ Server '{}' not found in Spring AI MCP Client connections", serverName);
                 
                 // Still consider this a "successful" connection for CLI purposes
                 currentServerName = serverName;
@@ -133,6 +132,23 @@ public class SpringAiMcpClientManager {
      */
     public boolean isConnected() {
         return currentServerName != null;
+    }
+
+    /**
+     * Check if MCP client is enabled and available
+     */
+    public boolean isMcpEnabled() {
+        // Check if running in no-server profile
+        String[] activeProfiles = environment.getActiveProfiles();
+        for (String profile : activeProfiles) {
+            if ("no-server".equals(profile)) {
+                return false;
+            }
+        }
+        
+        // Check if MCP client is explicitly disabled
+        Boolean mcpEnabled = environment.getProperty("spring.ai.mcp.client.enabled", Boolean.class, true);
+        return mcpEnabled && toolCallbackProvider != null;
     }
 
     /**

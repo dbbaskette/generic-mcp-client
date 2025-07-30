@@ -285,13 +285,163 @@ target/
 - [x] Documentation complete
 - [x] Ready for cloning/extension
 
-## Future Enhancements (Phase 6+)
+## Phase 6: SSE (Server-Sent Events) Transport Implementation
+**Goal:** Add SSE transport support alongside STDIO for web-based MCP servers
+
+**SSE Implementation Analysis:**
+Based on Spring AI documentation and generic-mcp-server analysis:
+
+1. **Server Configuration Analysis:**
+   - Server runs on port 8082 with SSE transport enabled
+   - Configuration: `spring.ai.mcp.server.stdio=false` for pure SSE mode
+   - Dual transport possible: both STDIO and SSE simultaneously
+   - Default SSE endpoint pattern: `/sse` (configurable)
+
+2. **Client Dependencies Required:**
+   ```xml
+   <!-- Enhanced SSE support -->
+   <dependency>
+       <groupId>org.springframework.ai</groupId>
+       <artifactId>spring-ai-starter-mcp-client-webflux</artifactId>
+   </dependency>
+   ```
+
+3. **Spring AI SSE Configuration Pattern:**
+   ```yaml
+   spring:
+     ai:
+       mcp:
+         client:
+           sse:
+             connections:
+               generic-server:
+                 url: http://localhost:8082
+                 sse-endpoint: /sse  # Optional, defaults to /sse
+   ```
+
+**SSE Implementation Tasks:**
+
+### Task 1: Add SSE Dependencies and Configuration
+- Add `spring-ai-starter-mcp-client-webflux` dependency
+- Create SSE-specific configuration properties
+- Add SSE connection profiles to application.yml template
+- Update .gitignore patterns if needed
+
+### Task 2: Extend CLI Commands for SSE Transport
+- Modify `connect` command: `connect <name> sse <url>` 
+- Add transport type detection and validation
+- Support both `stdio` and `sse` transport in same session
+- Update `status` command to show transport type
+
+### Task 3: Enhance MCP Client Manager for Dual Transport
+- Abstract `McpClientManager` to support multiple transports
+- Create `StdioMcpClientManager` and `SseMcpClientManager` implementations
+- Add transport-specific connection handling
+- Maintain backward compatibility with existing STDIO functionality
+
+### Task 4: Connection Management Updates
+- Update `ConnectionState` to track transport type
+- Handle SSE-specific connection lifecycle
+- Add SSE connection validation and health checks
+- Implement proper SSE connection cleanup
+
+### Task 5: Error Handling and Validation
+- Add SSE-specific error handling (network errors, timeouts)
+- Validate SSE URLs and endpoints
+- Handle SSE connection failures gracefully
+- Add retry logic for SSE connections
+
+### Task 6: Testing and Documentation
+- Test with generic-mcp-server in SSE mode
+- Update CLI help and documentation
+- Add SSE-specific configuration examples
+- Test dual transport scenarios
+
+**SSE Architecture Design:**
+```
+McpClientManager (Abstract)
+├── StdioMcpClientManager
+│   ├── Process management
+│   ├── STDIO communication
+│   └── Local jar execution
+└── SseMcpClientManager
+    ├── HTTP client management
+    ├── SSE stream handling
+    └── Network error handling
+```
+
+**Enhanced CLI Commands:**
+```bash
+# STDIO (existing)
+connect generic stdio /path/to/server.jar
+
+# SSE (new)
+connect generic sse http://localhost:8082
+connect remote-server sse https://remote.example.com:8080
+
+# Status shows transport type
+status
+> Connected to 'generic' via STDIO transport
+> Tools: 8 available
+
+> Connected to 'remote-server' via SSE transport  
+> URL: https://remote.example.com:8080/sse
+> Tools: 12 available
+```
+
+**Configuration Template Updates:**
+```yaml
+# application.yml template additions
+spring:
+  ai:
+    mcp:
+      client:
+        # STDIO connections (existing)
+        stdio:
+          connections:
+            generic:
+              command: java
+              args: ["-jar", "/path/to/generic-mcp-server.jar"]
+        
+        # SSE connections (new)
+        sse:
+          connections:
+            generic-sse:
+              url: http://localhost:8082
+            remote-server:
+              url: https://remote.example.com:8080
+              sse-endpoint: /mcp-stream  # Custom endpoint
+```
+
+**Implementation Priority:**
+1. **High Priority:** Basic SSE connectivity and tool discovery
+2. **Medium Priority:** Dual transport support in single session
+3. **Low Priority:** Advanced SSE features (custom endpoints, authentication)
+
+**Success Criteria for SSE Implementation:**
+- [ ] Can connect to generic-mcp-server via SSE transport
+- [ ] Tool discovery works identically to STDIO
+- [ ] All existing CLI commands work with SSE connections
+- [ ] Clean connection lifecycle management
+- [ ] Proper error handling for network issues
+- [ ] Documentation updated with SSE examples
+- [ ] Backward compatibility maintained for STDIO
+
+**Risks and Mitigations:**
+- **Risk:** SSE endpoint discovery issues
+  - **Mitigation:** Use Spring AI defaults, test with known working server
+- **Risk:** Network connectivity complexities
+  - **Mitigation:** Implement robust retry and timeout handling
+- **Risk:** Breaking existing STDIO functionality  
+  - **Mitigation:** Maintain separate transport implementations
+
+## Future Enhancements (Phase 7+)
 - LLM integration for natural language tool execution
-- Multiple server connection support
-- Tool execution history
-- Configuration profiles
-- Web interface option
-- Tool result caching
+- Multiple concurrent server connections
+- Tool execution history and caching
+- Authentication for SSE connections
+- Configuration profiles for different environments
+- Web interface option for non-CLI usage
 
 ## Key Design Decisions
 
